@@ -1,0 +1,68 @@
+name: Build Slender APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Slender_Average_Death_Android16_Project.zip'
+      - '.github/workflows/build-android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            python3-pip python3-venv \
+            build-essential ccache \
+            libffi-dev libssl-dev \
+            zlib1g-dev libncurses5-dev \
+            libncursesw5-dev libtinfo6 \
+            cmake autoconf automake libtool \
+            pkg-config
+
+      - name: Extract project
+        run: |
+          unzip -o Slender_Average_Death_Android16_Project.zip -d extracted
+          ls -la extracted
+          test -d extracted/slender_android
+          cp -r extracted/slender_android/. .
+
+      - name: Install Buildozer
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install buildozer cython==0.29.36
+
+      - name: Build APK
+        run: |
+          . .venv/bin/activate
+
+          # === Фикс для numpy (обязательно minapi 24) ===
+          sed -i 's/^#*\s*android\.minapi\s*=.*/android.minapi = 24/' buildozer.spec
+          sed -i 's/^#*\s*android\.ndk_api\s*=.*/android.ndk_api = 24/' buildozer.spec
+
+          # Если строк нет — добавляем
+          grep -q '^android.minapi' buildozer.spec || echo 'android.minapi = 24' >> buildozer.spec
+          grep -q '^android.ndk_api' buildozer.spec || echo 'android.ndk_api = 24' >> buildozer.spec
+
+          # Показываем в логе
+          echo "=== Текущие настройки minapi/ndk_api ==="
+          grep -E 'minapi|ndk_api' buildozer.spec || true
+          echo "======================================"
+
+          buildozer android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Slender-Android-APK
+          path: bin/*.apk
+          if-no-files-found: error
